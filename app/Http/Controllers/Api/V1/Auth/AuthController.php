@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\EmailOtp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -83,6 +85,76 @@ class AuthController extends Controller
     {
         return response()->json([
             'user' => $request->user()->load('vendorProfile'),
+        ]);
+    }
+
+    // POST /api/v1/auth/forgot-password
+    public function forgotPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $user = User::where('email', $validated['email'])->first();
+
+        // don't reveal whether the email exists - respond the same either way
+        if (! $user) {
+            return response()->json([
+                'message' => 'لو البريد ده مسجل عندنا، هيوصلك رمز إعادة التعيين',
+            ]);
+        }
+
+        $code = (string) random_int(100000, 999999);
+
+        EmailOtp::create([
+            'email' => $validated['email'],
+            'code' => $code,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        // TODO: replace with real email sending before launch.
+        Log::info("Password reset code for {$validated['email']}: {$code}");
+
+        return response()->json([
+            'message' => 'لو البريد ده مسجل عندنا، هيوصلك رمز إعادة التعيين',
+        ]);
+    }
+
+    // POST /api/v1/auth/reset-password
+    public function resetPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string|size:6',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $otp = EmailOtp::where('email', $validated['email'])
+            ->where('code', $validated['code'])
+            ->where('verified', false)
+            ->where('expires_at', '>', now())
+            ->latest()
+            ->first();
+
+        if (! $otp) {
+            return response()->json([
+                'message' => 'الكود غلط أو منتهي الصلاحية',
+            ], 422);
+        }
+
+        $user = User::where('email', $validated['email'])->first();
+
+        if (! $user) {
+            return response()->json([
+                'message' => 'الحساب غير موجود',
+            ], 404);
+        }
+
+        $user->update(['password' => Hash::make($validated['password'])]);
+        $otp->update(['verified' => true]);
+
+        return response()->json([
+            'message' => 'تم تغيير كلمة المرور بنجاح',
         ]);
     }
 }
