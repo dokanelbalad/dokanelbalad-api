@@ -40,50 +40,54 @@ Route::prefix('v1')->group(function () {
 
 // Protected routes (must be logged in)
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
+    // متاحين حتى لو الحساب مجمّد، عشان صاحب الحساب يقدر يشوف حالته ويخرج
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
 
-    Route::put('/products/{id}', [ProductController::class, 'update']);
-    Route::delete('/products/{id}', [ProductController::class, 'destroy']);
-    Route::post('/vendor/register', [VendorController::class, 'register']);
-    Route::get('/vendor/dashboard', [VendorController::class, 'dashboard']);
-    Route::get('/vendor/products', [VendorController::class, 'products']);
-    Route::get('/vendor/orders', [VendorController::class, 'orders']);
-    Route::post('/vendor/products', [VendorController::class, 'storeProduct']);
+    // أي حاجة تانية محتاجة الحساب يكون شغّال (مش مجمّد ولا محظور نهائياً)
+    Route::middleware('active')->group(function () {
+        Route::put('/products/{id}', [ProductController::class, 'update']);
+        Route::delete('/products/{id}', [ProductController::class, 'destroy']);
+        Route::post('/vendor/register', [VendorController::class, 'register']);
+        Route::get('/vendor/dashboard', [VendorController::class, 'dashboard']);
+        Route::get('/vendor/products', [VendorController::class, 'products']);
+        Route::get('/vendor/orders', [VendorController::class, 'orders']);
+        Route::post('/vendor/products', [VendorController::class, 'storeProduct']);
         Route::post('/vendor/products/{id}/mark-sold-offplatform', [VendorController::class, 'markSoldOffPlatform']);
 
-    Route::post('/orders', [OrderController::class, 'store']);
-    Route::get('/orders', [OrderController::class, 'index']);
-    Route::get('/orders/{id}', [OrderController::class, 'show']);
-    Route::post('/orders/{id}/confirm-delivery', [OrderController::class, 'confirmDelivery']);
+        Route::post('/orders', [OrderController::class, 'store']);
+        Route::get('/orders', [OrderController::class, 'index']);
+        Route::get('/orders/{id}', [OrderController::class, 'show']);
+        Route::post('/orders/{id}/confirm-delivery', [OrderController::class, 'confirmDelivery']);
 
-    Route::post('/orders/{id}/pay', [PaymentController::class, 'startPayment']);
-    Route::get('/orders/{id}/payment-status', [PaymentController::class, 'paymentStatus']);
+        Route::post('/orders/{id}/pay', [PaymentController::class, 'startPayment']);
+        Route::get('/orders/{id}/payment-status', [PaymentController::class, 'paymentStatus']);
 
-    Route::get('/conversations', [ConversationController::class, 'index']);
-    Route::post('/conversations', [ConversationController::class, 'store']);
-    Route::get('/conversations/{id}/messages', [ConversationController::class, 'messages']);
-    Route::post('/conversations/{id}/messages', [ConversationController::class, 'sendMessage']);
+        Route::get('/conversations', [ConversationController::class, 'index']);
+        Route::post('/conversations', [ConversationController::class, 'store']);
+        Route::get('/conversations/{id}/messages', [ConversationController::class, 'messages']);
+        Route::post('/conversations/{id}/messages', [ConversationController::class, 'sendMessage']);
 
-    Route::prefix('admin')->middleware('admin')->group(function () {
-        Route::get('/overview', [AdminController::class, 'overview']);
+        Route::prefix('admin')->middleware('admin')->group(function () {
+            Route::get('/overview', [AdminController::class, 'overview']);
 
-        Route::get('/vendors', [AdminController::class, 'vendors']);
-        Route::post('/vendors/{id}/approve', [AdminController::class, 'approveVendor']);
-        Route::post('/vendors/{id}/reject', [AdminController::class, 'rejectVendor']);
-        Route::post('/vendors/{id}/block', [AdminController::class, 'blockVendor']);
-        Route::post('/vendors/{id}/unblock', [AdminController::class, 'unblockVendor']);
+            Route::get('/vendors', [AdminController::class, 'vendors']);
+            Route::post('/vendors/{id}/approve', [AdminController::class, 'approveVendor']);
+            Route::post('/vendors/{id}/reject', [AdminController::class, 'rejectVendor']);
+            Route::post('/vendors/{id}/block', [AdminController::class, 'blockVendor']);
+            Route::post('/vendors/{id}/unblock', [AdminController::class, 'unblockVendor']);
 
-        Route::get('/categories', [AdminController::class, 'categories']);
-        Route::post('/categories', [AdminController::class, 'storeCategory']);
-        Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
-        Route::delete('/categories/{id}', [AdminController::class, 'destroyCategory']);
+            Route::get('/categories', [AdminController::class, 'categories']);
+            Route::post('/categories', [AdminController::class, 'storeCategory']);
+            Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
+            Route::delete('/categories/{id}', [AdminController::class, 'destroyCategory']);
 
-        Route::get('/commissions/pending', [AdminController::class, 'pendingCommissions']);
-        Route::post('/commissions/{vendorId}/collect', [AdminController::class, 'collectCommission']);
+            Route::get('/commissions/pending', [AdminController::class, 'pendingCommissions']);
+            Route::post('/commissions/{vendorId}/collect', [AdminController::class, 'collectCommission']);
 
-        Route::get('/products', [AdminController::class, 'products']);
-        Route::put('/products/{id}/category', [AdminController::class, 'updateProductCategory']);
-        Route::put('/products/{id}/discount', [AdminController::class, 'updateProductDiscount']);
+            Route::get('/products', [AdminController::class, 'products']);
+            Route::put('/products/{id}/category', [AdminController::class, 'updateProductCategory']);
+            Route::put('/products/{id}/discount', [AdminController::class, 'updateProductDiscount']);
+        });
     });
 });

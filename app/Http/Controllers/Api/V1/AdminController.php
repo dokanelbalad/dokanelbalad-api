@@ -76,22 +76,22 @@ class AdminController extends Controller
     }
 
     // POST /api/v1/admin/vendors/{id}/block
-    // حظر يدوي من الإدارة (منفصل عن الحظر التلقائي بسبب تأخر السداد)
+    // تجميد يدوي من الإدارة لحساب البائع بالكامل (منفصل عن التجميد التلقائي بسبب تأخر السداد)
     public function blockVendor($id)
     {
-        $vendor = VendorProfile::findOrFail($id);
-        $vendor->update(['status' => 'blocked']);
+        $vendor = VendorProfile::with('user')->findOrFail($id);
+        $vendor->user?->freezeAccount('admin_manual');
 
-        return response()->json(['data' => $vendor]);
+        return response()->json(['data' => $vendor->load('user')]);
     }
 
     // POST /api/v1/admin/vendors/{id}/unblock
     public function unblockVendor($id)
     {
-        $vendor = VendorProfile::findOrFail($id);
-        $vendor->update(['status' => 'approved']);
+        $vendor = VendorProfile::with('user')->findOrFail($id);
+        $vendor->user?->unfreezeAccount();
 
-        return response()->json(['data' => $vendor]);
+        return response()->json(['data' => $vendor->load('user')]);
     }
 
     // GET /api/v1/admin/categories
@@ -166,16 +166,16 @@ class AdminController extends Controller
     {
         $vendor = VendorProfile::findOrFail($vendorId);
 
+        $vendor->load('user');
         $amount = $vendor->pending_commission_balance;
 
-        $update = ['pending_commission_balance' => 0];
+        $vendor->update(['pending_commission_balance' => 0]);
 
-        // لو كان محظور بسبب التأخر في السداد، تحصيل المستحق بالكامل بيرفع الحظر تلقائياً
-        if ($vendor->status === 'blocked') {
-            $update['status'] = 'approved';
+        // لو كان الحساب مجمّد بسبب عمولة متأخرة، تحصيل المستحق بالكامل بيرفع التجميد تلقائياً
+        // (لو كان مجمّد لسبب تاني زي مشاركة أرقام أو تجميد يدوي، ده بيفضل زي ما هو)
+        if ($vendor->user && $vendor->user->frozen_reason === 'commission_overdue') {
+            $vendor->user->unfreezeAccount();
         }
-
-        $vendor->update($update);
 
         // ملحوظة: العمود type مسموح له قيم محددة بس (cod_settled / cod_pending / online_auto_deducted)
         // ومفيهوش 'collected' - ده كان فيه خطأ قديم هنا بيحاول يحط قيمة مش موجودة في القائمة.

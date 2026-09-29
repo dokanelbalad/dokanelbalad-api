@@ -131,11 +131,8 @@ class VendorController extends Controller
             ], 404);
         }
 
-        if ($vendor->status === 'blocked') {
-            return response()->json([
-                'message' => 'حسابك موقوف مؤقتاً بسبب عمولات مستحقة على الموقع. سدد المستحق عشان تقدر تضيف منتجات جديدة.',
-            ], 403);
-        }
+        // ملحوظة: تجميد الحساب (بسبب عمولة متأخرة أو أي سبب تاني) بقى بيتفحص مركزياً
+        // من middleware اسمه 'active' على مستوى كل الروابط المحمية، مش هنا لوحده.
 
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
