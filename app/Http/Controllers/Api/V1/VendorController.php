@@ -33,7 +33,11 @@ class VendorController extends Controller
             'city' => 'required|string|max:100',
         ]);
 
-        $commissionRate = $validated['verification_tier'] === 'verified' ? 5.00 : 10.00;
+        // نسبة عمولة موحّدة 2% لكل البائعين. مستوى التوثيق (basic/verified) بيتحكم بس في
+        // سقف قيمة الطلب (25,000 جنيه للـ basic، بدون سقف للـ verified) - مش في نسبة العمولة.
+        // أول 100 بائع بيتوافق عليهم بياخدوا 1% مدى الحياة، وده بيتحدد عند الموافقة
+        // (approveVendor في AdminController)، مش وقت التسجيل.
+        $commissionRate = 2.00;
 
         $data = [
             'store_name' => $validated['store_name'],
@@ -127,6 +131,12 @@ class VendorController extends Controller
             ], 404);
         }
 
+        if ($vendor->status === 'blocked') {
+            return response()->json([
+                'message' => 'حسابك موقوف مؤقتاً بسبب عمولات مستحقة على الموقع. سدد المستحق عشان تقدر تضيف منتجات جديدة.',
+            ], 403);
+        }
+
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
             'title' => 'required|string|max:200',
@@ -145,6 +155,49 @@ class VendorController extends Controller
         return response()->json([
             'data' => $product,
         ], 201);
+    }
+
+    // POST /api/v1/vendor/products/{id}/mark-sold-offplatform
+    // زرار "تم البيع" - للبيع اللي بيتم بره الموقع (زي السيارات) وبيستحق نفس نسبة العمولة
+    public function markSoldOffPlatform(Request $request, $id)
+    {
+        $vendor = $request->user()->vendorProfile;
+
+        if (! $vendor) {
+            return response()->json([
+                'message' => 'هذا الحساب مش بائع بعد',
+            ], 404);
+        }
+
+        $product = $vendor->products()->findOrFail($id);
+
+        $validated = $request->validate([
+            'sale_price' => 'required|numeric|min:0.01',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $rate = (float) $vendor->commission_rate;
+        $amount = round($validated['sale_price'] * $rate / 100, 2);
+
+        $tx = \App\Models\CommissionTransaction::create([
+            'vendor_id' => $vendor->id,
+            'order_id' => null,
+            'amount' => $amount,
+            'type' => 'cod_settled', // بيتفرّق عن طلب حقيقي بكون order_id فاضي (null)
+            'status' => 'pending',
+        ]);
+
+        $vendor->increment('pending_commission_balance', $amount);
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'status')) {
+            $product->update(['status' => 'sold']);
+        }
+
+        return response()->json([
+            'message' => 'تم تسجيل البيع بنجاح، والعمولة المستحقة أضيفت لحسابك',
+            'commission_transaction' => $tx,
+            'pending_commission_balance' => $vendor->fresh()->pending_commission_balance,
+        ]);
     }
 
     // GET /api/v1/vendor/orders

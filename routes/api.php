@@ -50,6 +50,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/vendor/products', [VendorController::class, 'products']);
     Route::get('/vendor/orders', [VendorController::class, 'orders']);
     Route::post('/vendor/products', [VendorController::class, 'storeProduct']);
+        Route::post('/vendor/products/{id}/mark-sold-offplatform', [VendorController::class, 'markSoldOffPlatform']);
 
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders', [OrderController::class, 'index']);
@@ -70,6 +71,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/vendors', [AdminController::class, 'vendors']);
         Route::post('/vendors/{id}/approve', [AdminController::class, 'approveVendor']);
         Route::post('/vendors/{id}/reject', [AdminController::class, 'rejectVendor']);
+        Route::post('/vendors/{id}/block', [AdminController::class, 'blockVendor']);
+        Route::post('/vendors/{id}/unblock', [AdminController::class, 'unblockVendor']);
 
         Route::get('/categories', [AdminController::class, 'categories']);
         Route::post('/categories', [AdminController::class, 'storeCategory']);
