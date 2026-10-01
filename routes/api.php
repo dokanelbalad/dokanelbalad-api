@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\OtpController;
 use App\Http\Controllers\Api\V1\AdminController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\SaleConfirmationController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -53,7 +54,11 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/vendor/products', [VendorController::class, 'products']);
         Route::get('/vendor/orders', [VendorController::class, 'orders']);
         Route::post('/vendor/products', [VendorController::class, 'storeProduct']);
+        Route::get('/vendor/products/{id}/buyers', [VendorController::class, 'productBuyers']);
         Route::post('/vendor/products/{id}/mark-sold-offplatform', [VendorController::class, 'markSoldOffPlatform']);
+
+        Route::get('/buyer/sale-confirmations', [SaleConfirmationController::class, 'index']);
+        Route::post('/buyer/sale-confirmations/{id}/respond', [SaleConfirmationController::class, 'respond']);
 
         Route::post('/orders', [OrderController::class, 'store']);
         Route::get('/orders', [OrderController::class, 'index']);
@@ -84,6 +89,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
             Route::get('/commissions/pending', [AdminController::class, 'pendingCommissions']);
             Route::post('/commissions/{vendorId}/collect', [AdminController::class, 'collectCommission']);
+            Route::get('/offplatform-sales/pending-review', [AdminController::class, 'offplatformSalesPendingReview']);
+            Route::post('/offplatform-sales/{id}/approve', [AdminController::class, 'approveOffplatformSale']);
+            Route::post('/offplatform-sales/{id}/dismiss', [AdminController::class, 'dismissOffplatformSale']);
 
             Route::get('/products', [AdminController::class, 'products']);
             Route::put('/products/{id}/category', [AdminController::class, 'updateProductCategory']);

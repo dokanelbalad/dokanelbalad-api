@@ -154,24 +154,51 @@ class VendorController extends Controller
         ], 201);
     }
 
+    // GET /api/v1/vendor/products/{id}/buyers
+    // قايمة المشترين اللي راسلوا على المنتج ده، عشان البائع يختار منهم لما يبلّغ عن بيع
+    public function productBuyers(Request $request, $id)
+    {
+        $vendor = $request->user()->vendorProfile;
+
+        if (! $vendor) {
+            return response()->json(['message' => 'هذا الحساب مش بائع بعد'], 404);
+        }
+
+        $product = $vendor->products()->findOrFail($id);
+
+        $conversations = \App\Models\Conversation::where('product_id', $product->id)
+            ->where('vendor_id', $vendor->id)
+            ->with('buyer:id,name')
+            ->orderBy('last_message_at', 'desc')
+            ->get(['id', 'buyer_id', 'last_message_at']);
+
+        return response()->json(['data' => $conversations]);
+    }
+
     // POST /api/v1/vendor/products/{id}/mark-sold-offplatform
-    // زرار "تم البيع" - للبيع اللي بيتم بره الموقع (زي السيارات) وبيستحق نفس نسبة العمولة
+    // زرار "تم البيع" - للبيع اللي بيتم بره الموقع (زي السيارات) وبيستحق نفس نسبة العمولة.
+    // البائع لازم يحدد المحادثة (يعني المشتري) اللي تم البيع له، عشان المشتري يتبعتله
+    // طلب تأكيد خلال 24 ساعة قبل ما العمولة تتسجل رسمي - مش مجرد كلام البائع لوحده.
     public function markSoldOffPlatform(Request $request, $id)
     {
         $vendor = $request->user()->vendorProfile;
 
         if (! $vendor) {
-            return response()->json([
-                'message' => 'هذا الحساب مش بائع بعد',
-            ], 404);
+            return response()->json(['message' => 'هذا الحساب مش بائع بعد'], 404);
         }
 
         $product = $vendor->products()->findOrFail($id);
 
         $validated = $request->validate([
             'sale_price' => 'required|numeric|min:0.01',
+            'conversation_id' => 'required|exists:conversations,id',
             'note' => 'nullable|string|max:500',
         ]);
+
+        $conversation = \App\Models\Conversation::where('id', $validated['conversation_id'])
+            ->where('product_id', $product->id)
+            ->where('vendor_id', $vendor->id)
+            ->firstOrFail();
 
         $rate = (float) $vendor->commission_rate;
         $amount = round($validated['sale_price'] * $rate / 100, 2);
@@ -179,21 +206,24 @@ class VendorController extends Controller
         $tx = \App\Models\CommissionTransaction::create([
             'vendor_id' => $vendor->id,
             'order_id' => null,
+            'conversation_id' => $conversation->id,
             'amount' => $amount,
             'type' => 'cod_settled', // بيتفرّق عن طلب حقيقي بكون order_id فاضي (null)
             'status' => 'pending',
+            'buyer_confirmation' => 'pending',
+            'confirmation_deadline' => now()->addDay(),
         ]);
 
-        $vendor->increment('pending_commission_balance', $amount);
+        // ملحوظة: العمولة مش بتضاف لرصيد البائع دلوقتي - بتستنى تأكيد المشتري
+        // (أو مراجعة الإدارة لو المشتري رفض أو ما ردش خلال 24 ساعة)
 
         if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'status')) {
             $product->update(['status' => 'sold']);
         }
 
         return response()->json([
-            'message' => 'تم تسجيل البيع بنجاح، والعمولة المستحقة أضيفت لحسابك',
+            'message' => 'تم تسجيل البيع، وهيتبعت طلب تأكيد للمشتري. العمولة هتتسجل رسمي بعد ما يأكد (خلال 24 ساعة).',
             'commission_transaction' => $tx,
-            'pending_commission_balance' => $vendor->fresh()->pending_commission_balance,
         ]);
     }
 

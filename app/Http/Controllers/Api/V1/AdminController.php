@@ -191,6 +191,57 @@ class AdminController extends Controller
         ]);
     }
 
+    // GET /api/v1/admin/offplatform-sales/pending-review
+    // بيعات بره الموقع اتبلّغ عنها والمشتري رفضها أو فات ميعاد رده (expired) - محتاجة قرار إدارة
+    public function offplatformSalesPendingReview()
+    {
+        $sales = CommissionTransaction::with(['vendor.user', 'conversation.buyer', 'conversation.product'])
+            ->whereNull('order_id')
+            ->whereIn('buyer_confirmation', ['rejected', 'expired'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json(['data' => $sales]);
+    }
+
+    // POST /api/v1/admin/offplatform-sales/{id}/approve
+    // الإدارة راجعت الحالة وقررت إن العمولة مستحقة فعلاً رغم رفض/عدم رد المشتري
+    public function approveOffplatformSale($id)
+    {
+        $tx = CommissionTransaction::findOrFail($id);
+
+        if (! in_array($tx->buyer_confirmation, ['rejected', 'expired'])) {
+            return response()->json(['message' => 'الحالة دي مش محتاجة مراجعة'], 422);
+        }
+
+        $tx->update([
+            'buyer_confirmation' => 'admin_approved',
+            'buyer_response_at' => now(),
+        ]);
+
+        $tx->vendor->increment('pending_commission_balance', $tx->amount);
+
+        return response()->json(['data' => $tx->fresh()]);
+    }
+
+    // POST /api/v1/admin/offplatform-sales/{id}/dismiss
+    // الإدارة قررت إن مفيش عمولة مستحقة (اقتناع بإن البيع ما حصلش فعلاً أو الشك مش كافي)
+    public function dismissOffplatformSale($id)
+    {
+        $tx = CommissionTransaction::findOrFail($id);
+
+        if (! in_array($tx->buyer_confirmation, ['rejected', 'expired'])) {
+            return response()->json(['message' => 'الحالة دي مش محتاجة مراجعة'], 422);
+        }
+
+        $tx->update([
+            'buyer_confirmation' => 'dismissed',
+            'buyer_response_at' => now(),
+        ]);
+
+        return response()->json(['data' => $tx->fresh()]);
+    }
+
     // GET /api/v1/admin/products
     public function products()
     {
