@@ -8,6 +8,7 @@ use App\Models\VendorProfile;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\CommissionTransaction;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -21,12 +22,21 @@ class AdminController extends Controller
     // GET /api/v1/admin/overview
     public function overview()
     {
+        $frozenAccounts = User::where(function ($q) {
+            $q->whereNotNull('frozen_reason')->orWhere('permanently_banned', true);
+        })->count();
+
+        $needsReview = CommissionTransaction::whereNull('order_id')
+            ->whereIn('buyer_confirmation', ['rejected', 'expired'])
+            ->count();
+
         return response()->json([
             'data' => [
                 'total_users' => User::count(),
                 'total_vendors' => VendorProfile::count(),
                 'pending_vendors' => VendorProfile::where('status', 'pending')->count(),
-                'blocked_vendors' => VendorProfile::where('status', 'blocked')->count(),
+                'frozen_accounts' => $frozenAccounts,
+                'offplatform_sales_needing_review' => $needsReview,
                 'total_products' => \App\Models\Product::count(),
                 'total_orders' => Order::count(),
                 'total_pending_commission' => VendorProfile::sum('pending_commission_balance'),
@@ -191,6 +201,50 @@ class AdminController extends Controller
         ]);
     }
 
+    // GET /api/v1/admin/accounts/frozen
+    // كل حساب مجمّد أو مغلق نهائياً دلوقتي، بائع كان أو مشتري
+    public function frozenAccounts()
+    {
+        $accounts = User::with('vendorProfile:id,user_id,store_name')
+            ->where(function ($q) {
+                $q->whereNotNull('frozen_reason')->orWhere('permanently_banned', true);
+            })
+            ->orderBy('updated_at', 'desc')
+            ->get([
+                'id', 'name', 'email', 'phone', 'role',
+                'frozen_reason', 'frozen_until', 'permanently_banned',
+                'phone_violation_strikes', 'phone_freeze_count', 'commission_freeze_count',
+                'updated_at',
+            ]);
+
+        return response()->json(['data' => $accounts]);
+    }
+
+    // POST /api/v1/admin/accounts/{id}/freeze
+    // تجميد يدوي لأي حساب (بائع أو مشتري)، لأسباب مش مغطاة بالتجميد التلقائي
+    public function freezeUser($id)
+    {
+        $user = User::findOrFail($id);
+        $user->freezeAccount('admin_manual');
+
+        return response()->json(['data' => $user->fresh()]);
+    }
+
+    // POST /api/v1/admin/accounts/{id}/unfreeze
+    // ده تدخل إداري كامل: بيرجّع الحساب يشتغل حتى لو كان "مغلق نهائياً"، لأن قرار
+    // الإلغاء النهائي للحظر من اختصاص الإدارة بس مهما كان سبب التجميد الأصلي
+    public function unfreezeUser($id)
+    {
+        $user = User::findOrFail($id);
+        $user->update([
+            'frozen_reason' => null,
+            'frozen_until' => null,
+            'permanently_banned' => false,
+        ]);
+
+        return response()->json(['data' => $user->fresh()]);
+    }
+
     // GET /api/v1/admin/offplatform-sales/pending-review
     // بيعات بره الموقع اتبلّغ عنها والمشتري رفضها أو فات ميعاد رده (expired) - محتاجة قرار إدارة
     public function offplatformSalesPendingReview()
@@ -238,6 +292,44 @@ class AdminController extends Controller
             'buyer_confirmation' => 'dismissed',
             'buyer_response_at' => now(),
         ]);
+
+        return response()->json(['data' => $tx->fresh()]);
+    }
+
+    // GET /api/v1/admin/offplatform-sales/pending-intervention
+    // بيعات لسه "مستنية رد المشتري" (ما فاتش عليها 24 ساعة بعد) - للتدخل الفوري الاستثنائي بس
+    public function offplatformSalesPendingIntervention()
+    {
+        $sales = CommissionTransaction::with(['vendor.user', 'conversation.buyer', 'conversation.product'])
+            ->whereNull('order_id')
+            ->where('buyer_confirmation', 'pending')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json(['data' => $sales]);
+    }
+
+    // POST /api/v1/admin/offplatform-sales/{id}/force-resolve
+    // تدخل إداري فوري على حالة لسه في وقتها (قبل ما تتحول rejected/expired) - لحالات
+    // استثنائية بس (بلاغ أو شكوى وصلت)، مش القاعدة العادية. body: { decision: "approve"|"dismiss" }
+    public function forceResolveOffplatformSale(Request $request, $id)
+    {
+        $tx = CommissionTransaction::findOrFail($id);
+
+        if (in_array($tx->buyer_confirmation, ['confirmed', 'admin_approved', 'dismissed'])) {
+            return response()->json(['message' => 'الحالة دي اتحسمت بالفعل'], 422);
+        }
+
+        $validated = $request->validate([
+            'decision' => 'required|in:approve,dismiss',
+        ]);
+
+        if ($validated['decision'] === 'approve') {
+            $tx->update(['buyer_confirmation' => 'admin_approved', 'buyer_response_at' => now()]);
+            $tx->vendor->increment('pending_commission_balance', $tx->amount);
+        } else {
+            $tx->update(['buyer_confirmation' => 'dismissed', 'buyer_response_at' => now()]);
+        }
 
         return response()->json(['data' => $tx->fresh()]);
     }

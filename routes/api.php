@@ -92,6 +92,12 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
             Route::get('/offplatform-sales/pending-review', [AdminController::class, 'offplatformSalesPendingReview']);
             Route::post('/offplatform-sales/{id}/approve', [AdminController::class, 'approveOffplatformSale']);
             Route::post('/offplatform-sales/{id}/dismiss', [AdminController::class, 'dismissOffplatformSale']);
+            Route::get('/offplatform-sales/pending-intervention', [AdminController::class, 'offplatformSalesPendingIntervention']);
+            Route::post('/offplatform-sales/{id}/force-resolve', [AdminController::class, 'forceResolveOffplatformSale']);
+
+            Route::get('/accounts/frozen', [AdminController::class, 'frozenAccounts']);
+            Route::post('/accounts/{id}/freeze', [AdminController::class, 'freezeUser']);
+            Route::post('/accounts/{id}/unfreeze', [AdminController::class, 'unfreezeUser']);
 
             Route::get('/products', [AdminController::class, 'products']);
             Route::put('/products/{id}/category', [AdminController::class, 'updateProductCategory']);
