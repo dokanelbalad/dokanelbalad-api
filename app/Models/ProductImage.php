@@ -16,6 +16,8 @@ class ProductImage extends Model
         'sort_order',
     ];
 
+    protected $appends = ['image_url'];
+
     protected function casts(): array
     {
         return [
@@ -26,5 +28,10 @@ class ProductImage extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function getImageUrlAttribute()
+    {
+        return $this->image_path ? asset('storage/' . $this->image_path) : null;
     }
 }

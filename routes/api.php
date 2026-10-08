@@ -54,6 +54,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/vendor/products', [VendorController::class, 'products']);
         Route::get('/vendor/orders', [VendorController::class, 'orders']);
         Route::post('/vendor/products', [VendorController::class, 'storeProduct']);
+        Route::post('/vendor/products/{id}/images', [VendorController::class, 'addProductImages']);
+        Route::delete('/vendor/products/{id}/images/{imageId}', [VendorController::class, 'deleteProductImage']);
         Route::get('/vendor/products/{id}/buyers', [VendorController::class, 'productBuyers']);
         Route::post('/vendor/products/{id}/mark-sold-offplatform', [VendorController::class, 'markSoldOffPlatform']);
 

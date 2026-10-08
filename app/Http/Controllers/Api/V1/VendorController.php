@@ -145,13 +145,85 @@ class VendorController extends Controller
             'shipping_paid_by' => 'nullable|in:vendor,buyer',
             'quantity' => 'nullable|integer|min:1',
             'governorate' => 'required|string|max:100',
+            'images' => 'nullable|array|max:5',
+            'images.*' => 'image|max:4096',
         ]);
 
-        $product = $vendor->products()->create($validated);
+        $product = $vendor->products()->create(collect($validated)->except('images')->all());
+
+        $this->attachImages($product, $request->file('images', []));
 
         return response()->json([
-            'data' => $product,
+            'data' => $product->load('images'),
         ], 201);
+    }
+
+    // POST /api/v1/vendor/products/{id}/images
+    // إضافة صور جديدة لمنتج موجود (للتعديل بعد الإنشاء)، لحد إجمالي 5 صور للمنتج
+    public function addProductImages(Request $request, $id)
+    {
+        $vendor = $request->user()->vendorProfile;
+
+        if (! $vendor) {
+            return response()->json(['message' => 'هذا الحساب مش بائع بعد'], 404);
+        }
+
+        $product = $vendor->products()->findOrFail($id);
+
+        $existingCount = $product->images()->count();
+
+        $validated = $request->validate([
+            'images' => 'required|array|min:1|max:' . max(0, 5 - $existingCount),
+            'images.*' => 'image|max:4096',
+        ], [
+            'images.max' => 'المنتج وصل للحد الأقصى 5 صور، احذف صورة الأول عشان تضيف جديدة',
+        ]);
+
+        $this->attachImages($product, $request->file('images'));
+
+        return response()->json(['data' => $product->fresh('images')]);
+    }
+
+    // DELETE /api/v1/vendor/products/{id}/images/{imageId}
+    public function deleteProductImage(Request $request, $id, $imageId)
+    {
+        $vendor = $request->user()->vendorProfile;
+
+        if (! $vendor) {
+            return response()->json(['message' => 'هذا الحساب مش بائع بعد'], 404);
+        }
+
+        $product = $vendor->products()->findOrFail($id);
+        $image = $product->images()->findOrFail($imageId);
+
+        $wasPrimary = $image->is_primary;
+
+        \Illuminate\Support\Facades\Storage::disk('public')->delete($image->image_path);
+        $image->delete();
+
+        if ($wasPrimary) {
+            $next = $product->images()->orderBy('sort_order')->first();
+            $next?->update(['is_primary' => true]);
+        }
+
+        return response()->json(['data' => $product->fresh('images')]);
+    }
+
+    private function attachImages($product, array $files): void
+    {
+        $startOrder = $product->images()->count();
+        $hasPrimaryAlready = $product->images()->where('is_primary', true)->exists();
+
+        foreach (array_values($files) as $i => $file) {
+            $path = $file->store('products', 'public');
+
+            \App\Models\ProductImage::create([
+                'product_id' => $product->id,
+                'image_path' => $path,
+                'is_primary' => ! $hasPrimaryAlready && $i === 0,
+                'sort_order' => $startOrder + $i,
+            ]);
+        }
     }
 
     // GET /api/v1/vendor/products/{id}/buyers

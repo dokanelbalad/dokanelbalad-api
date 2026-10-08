@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
@@ -103,31 +104,41 @@ class ProductController extends Controller
         }
 
         $validated = $request->validate([
+            'category_id' => 'sometimes|exists:categories,id',
             'title' => 'sometimes|string|max:200',
             'description' => 'sometimes|string',
             'condition' => 'sometimes|in:new,used,like_new',
             'price' => 'sometimes|numeric|min:0',
+            'discount_percentage' => 'sometimes|nullable|numeric|min:0|max:90',
+            'shipping_fee' => 'sometimes|nullable|numeric|min:0',
+            'shipping_paid_by' => 'sometimes|in:vendor,buyer',
             'quantity' => 'sometimes|integer|min:1',
+            'governorate' => 'sometimes|string|max:100',
             'status' => 'sometimes|in:active,sold,paused,rejected',
         ]);
 
         $product->update($validated);
 
         return response()->json([
-            'data' => $product,
+            'data' => $product->fresh('images'),
         ]);
     }
 
     // DELETE /api/v1/products/{id}
     public function destroy(Request $request, $id)
     {
-        $product = Product::findOrFail($id);
+        $product = Product::with('images')->findOrFail($id);
         $vendor = $request->user()->vendorProfile;
 
         if (! $vendor || $product->vendor_id !== $vendor->id) {
             return response()->json([
                 'message' => 'مش مسموحلك تحذف المنتج ده',
             ], 403);
+        }
+
+        // نمسح ملفات الصور الفعلية من التخزين، مش بس سطورها في قاعدة البيانات
+        foreach ($product->images as $image) {
+            Storage::disk('public')->delete($image->image_path);
         }
 
         $product->delete();
